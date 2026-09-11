@@ -1,0 +1,2 @@
+# LanDesk
+for intranet remoting
