@@ -1,0 +1,36 @@
+# Local build output (the packaged ZIP is the distributable)
+/Windows/
+/work/*
+!/work/*.py
+!/work/*.cs
+!/work/*.ico
+/outputs/
+*.partial
+*.lnk
+LanDesk-Windows-x64.zip
+LanDesk-source.zip
+SHA256SUMS.txt
+settings-v2.dat
+settings-v2.new
+
+# Python local state
+__pycache__/
+*.py[cod]
+.venv/
+build/
+dist/
+*.spec
+
+# Local logs and credentials
+*.log
+*.pem
+*.key
+.env
+.env.*
+!.env.example
+
+# Editor and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
