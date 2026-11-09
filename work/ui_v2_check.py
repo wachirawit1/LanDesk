@@ -74,6 +74,14 @@ update_dlg = [w for w in root.winfo_children() if isinstance(w, tk.Toplevel)][0]
 print('Update dialog UI:', update_dlg.winfo_width(), update_dlg.winfo_height())
 update_dlg.destroy()
 
+with patch('updater.fetch_latest_release', return_value=mock_rel), patch('tkinter.messagebox.showinfo') as mock_info:
+    app.check_updates(manual=True)
+    time.sleep(0.1)
+    app.pump()
+    root.update()
+    assert mock_info.called, 'showinfo should have been called for up-to-date manual check'
+    assert 'เป็นเวอร์ชันล่าสุดแล้ว' in app.host_status.get()
+
 app.open_installer()
 root.update()
 inst_dlg = [w for w in root.winfo_children() if isinstance(w, tk.Toplevel)][0]

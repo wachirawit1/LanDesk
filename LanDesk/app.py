@@ -178,18 +178,25 @@ class App:
                 from updater import fetch_latest_release, is_newer_version, show_update_dialog
                 rel = fetch_latest_release(repo)
                 if is_newer_version(rel['version'], VERSION):
+                    self.post( self.host_status.set, f"พบเวอร์ชันใหม่พร้อมอัปเดต: {rel['tag']}")
                     self.post(show_update_dialog, self.root, rel, VERSION, self.close)
-                    self.post(self.host_status.set, f"พบเวอร์ชันใหม่พร้อมอัปเดต: {rel['tag']}")
                 else:
                     if manual:
-                        self.post(messagebox.showinfo, 'เป็นเวอร์ชันล่าสุดแล้ว',
-                                  f'คุณกำลังใช้งาน LanDesk เวอร์ชันล่าสุดแล้ว (v{VERSION})', self.root)
-                        self.post(self.host_status.set, f'LanDesk v{VERSION} เป็นเวอร์ชันล่าสุดแล้ว')
+                        self.post(self.host_status.set, f'🟢 พร้อมรับการเชื่อมต่ออัตโนมัติ · LanDesk v{VERSION} เป็นเวอร์ชันล่าสุดแล้ว')
+                        self.post(lambda: messagebox.showinfo(
+                            'เป็นเวอร์ชันล่าสุดแล้ว',
+                            f'คุณกำลังใช้งาน LanDesk เวอร์ชันล่าสุดแล้ว (v{VERSION})',
+                            parent=self.root,
+                        ))
             except Exception as err:
                 if manual:
-                    self.post(messagebox.showwarning, 'ตรวจอัปเดตไม่สำเร็จ',
-                              f'ไม่สามารถเชื่อมต่อตรวจหาอัปเดตได้ในขณะนี้:\n{err}', self.root)
-                    self.post(self.host_status.set, 'ตรวจหาอัปเดตไม่สำเร็จ')
+                    err_text = str(err)
+                    self.post(self.host_status.set, '🟢 พร้อมรับการเชื่อมต่ออัตโนมัติ · ตรวจหาอัปเดตไม่สำเร็จ')
+                    self.post(lambda: messagebox.showwarning(
+                        'ตรวจอัปเดตไม่สำเร็จ',
+                        f'ไม่สามารถเชื่อมต่อตรวจหาอัปเดตได้ในขณะนี้:\n{err_text}',
+                        parent=self.root,
+                    ))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -230,14 +237,19 @@ class App:
             self.calls.put((function, args))
 
     def pump(self):
-        for _ in range(100):
-            try:
-                function, args = self.calls.get_nowait()
-            except queue.Empty:
-                break
-            function(*args)
-        if not self.closing:
-            self.root.after(30, self.pump)
+        try:
+            for _ in range(100):
+                try:
+                    function, args = self.calls.get_nowait()
+                except queue.Empty:
+                    break
+                try:
+                    function(*args)
+                except Exception:
+                    pass
+        finally:
+            if not self.closing:
+                self.root.after(30, self.pump)
 
     def ask(self, kind, data, cancel=None, timeout=60):
         done, box = threading.Event(), [None]
@@ -505,16 +517,23 @@ class App:
         from installer import show_installer_dialog
         show_installer_dialog(parent=self.root, on_quit=self.close)
 
-    def show_from_tray(self):
+    def show_from_tray(self, ack_callback=None):
         if self.closing:
             return
         try:
             self.root.deiconify()
             self.root.state('normal')
+            self.root.attributes('-topmost', True)
             self.root.lift()
             self.root.focus_force()
+            self.root.after(250, lambda: self.root.attributes('-topmost', False))
         except Exception:
             pass
+        if ack_callback:
+            try:
+                ack_callback()
+            except Exception:
+                pass
 
     def hide_to_tray(self, notify=True):
         if self.closing or not self.tray:
@@ -577,7 +596,7 @@ def main():
     app_ref = [None]
     guard = None
     if not is_test_env:
-        guard = SingleInstanceGuard(on_wakeup=lambda: app_ref[0] and app_ref[0].post(app_ref[0].show_from_tray))
+        guard = SingleInstanceGuard(on_wakeup=lambda ack=None: app_ref[0] and app_ref[0].post(app_ref[0].show_from_tray, ack))
         if guard.already_running:
             return
 

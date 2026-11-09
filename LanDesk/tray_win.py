@@ -35,6 +35,7 @@ MF_STRING = 0x0000
 MF_SEPARATOR = 0x0800
 
 SINGLE_INSTANCE_EVENT = 'Local\\LanDeskShowWindowEvent_v03'
+SINGLE_INSTANCE_ACK_EVENT = 'Local\\LanDeskShowWindowAck_v03'
 SINGLE_INSTANCE_MUTEX = 'Local\\LanDeskSingleInstanceMutex_v03'
 
 
@@ -97,19 +98,52 @@ class SingleInstanceGuard:
         self.mutex = self.kernel.CreateMutexW(None, False, SINGLE_INSTANCE_MUTEX)
         last_err = ctypes.get_last_error()
         self.event = self.kernel.CreateEventW(None, False, False, SINGLE_INSTANCE_EVENT)
+        self.ack_event = self.kernel.CreateEventW(None, False, False, SINGLE_INSTANCE_ACK_EVENT)
         if last_err == 183:  # ERROR_ALREADY_EXISTS
-            self.already_running = True
             if self.event:
                 self.kernel.SetEvent(self.event)
+            ack_res = self.kernel.WaitForSingleObject(self.ack_event, 1200) if self.ack_event else 1
+            if ack_res == 0:
+                self.already_running = True
+            else:
+                # Existing instance did not respond on main thread; terminate stuck process and take over
+                import subprocess
+                my_pid = os.getpid()
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = 0
+                subprocess.run(
+                    ['taskkill', '/F', '/FI', f'PID ne {my_pid}', '/IM', 'LanDesk.exe'],
+                    startupinfo=startupinfo,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+                self.already_running = False
+                if self.event and self.on_wakeup:
+                    threading.Thread(target=self._watch, daemon=True).start()
         elif self.event and self.on_wakeup:
             threading.Thread(target=self._watch, daemon=True).start()
+
+    def ack_wakeup(self):
+        if getattr(self, 'ack_event', None):
+            try:
+                self.kernel.SetEvent(self.ack_event)
+            except Exception:
+                pass
 
     def _watch(self):
         while not self.stop_event.is_set():
             res = self.kernel.WaitForSingleObject(self.event, 400)
             if res == 0 and not self.stop_event.is_set():
                 try:
-                    self.on_wakeup()
+                    self.on_wakeup(self.ack_wakeup)
+                except TypeError:
+                    try:
+                        self.on_wakeup()
+                        self.ack_wakeup()
+                    except Exception:
+                        pass
                 except Exception:
                     pass
 
@@ -118,6 +152,9 @@ class SingleInstanceGuard:
         if self.event:
             self.kernel.CloseHandle(self.event)
             self.event = None
+        if getattr(self, 'ack_event', None):
+            self.kernel.CloseHandle(self.ack_event)
+            self.ack_event = None
         if self.mutex:
             self.kernel.CloseHandle(self.mutex)
             self.mutex = None
