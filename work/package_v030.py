@@ -12,10 +12,13 @@ import tempfile
 import zipfile
 import zlib
 
+import re
+
 root = Path.cwd()
 source = root / 'LanDesk'
 build_v020 = root / 'work/build-v020/LanDesk'
-output = root / 'outputs/v0.3.0'
+version = re.search(r"VERSION\s*=\s*['\"]([^'\"]+)['\"]", (source / 'security.py').read_text('utf-8')).group(1)
+output = root / f'outputs/v{version}'
 binary = output / 'Windows/LanDesk'
 
 
@@ -239,13 +242,16 @@ if local_installed.exists():
     except PermissionError:
         pass
 
-for name in ['README.md', 'TEST-REPORT.md', 'RELEASE-NOTES-v0.3.0.md']:
+notes_file = f'RELEASE-NOTES-v{version}.md'
+for name in ['README.md', 'TEST-REPORT.md']:
     shutil.copy2(source / name, binary / name)
+if (source / notes_file).exists():
+    shutil.copy2(source / notes_file, binary / notes_file)
+    shutil.copy2(source / notes_file, output / notes_file)
 shutil.copy2(root / 'SECURITY.md', binary / 'SECURITY.md')
-shutil.copy2(source / 'RELEASE-NOTES-v0.3.0.md', output / 'RELEASE-NOTES-v0.3.0.md')
 
 checksums = []
-for folder, filename in [(source, 'LanDesk-v0.3.0-source.zip'), (binary, 'LanDesk-v0.3.0-Windows-x64.zip')]:
+for folder, filename in [(source, f'LanDesk-v{version}-source.zip'), (binary, f'LanDesk-v{version}-Windows-x64.zip')]:
     destination = output / filename
     with zipfile.ZipFile(destination, 'w', zipfile.ZIP_DEFLATED) as archive:
         for path in sorted(folder.rglob('*')):
@@ -270,8 +276,8 @@ for folder, filename in [(source, 'LanDesk-v0.3.0-source.zip'), (binary, 'LanDes
 
 csc_path = Path(r'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe')
 setup_cs = root / 'work/SetupInstaller.cs'
-setup_exe = output / 'LanDesk-Setup-v0.3.0.exe'
-win_zip = output / 'LanDesk-v0.3.0-Windows-x64.zip'
+setup_exe = output / f'LanDesk-Setup-v{version}.exe'
+win_zip = output / f'LanDesk-v{version}-Windows-x64.zip'
 if csc_path.exists() and setup_cs.exists():
     setup_ico = root / 'work/setup.ico'
     cmd = [

@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 from ctypes import wintypes
 
-VERSION = '0.3.0'
+VERSION = '0.3.1'
 DEFAULT_PORT = 45888
 STARTUP_KEY = r'Software\Microsoft\Windows\CurrentVersion\Run'
 STARTUP_VALUE = 'LanDesk'
@@ -125,7 +125,7 @@ class Settings:
                      'auto_listen': True, 'allow_networks': '', 'max_minutes': 60,
                      'alias': '', 'contacts': [], 'startup': True,
                      'close_to_tray': True, 'service_migrated_v03': True,
-                     'github_repo': '', 'auto_check_update': True}
+                     'github_repo': 'wachirawit1/LanDesk', 'auto_check_update': True}
         if self.path.exists():
             try:
                 loaded = json.loads(protect(self.path.read_bytes(), decrypt=True))
@@ -136,6 +136,8 @@ class Settings:
                     loaded['clipboard'] = True
                     loaded['files'] = True
                     loaded['service_migrated_v03'] = True
+                if not loaded.get('github_repo'):
+                    loaded['github_repo'] = 'wachirawit1/LanDesk'
                 self.data.update(loaded)
             except Exception as error:
                 raise ValueError('อ่านการตั้งค่าที่เข้ารหัสไม่ได้ กรุณาใช้บัญชี Windows เดิม ห้ามเปิดรับด้วยค่าที่ไม่ตรวจสอบ') from error

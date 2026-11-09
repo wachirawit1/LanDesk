@@ -8,10 +8,10 @@ using System.Threading;
 using System.Windows.Forms;
 using Microsoft.Win32;
 
-[assembly: AssemblyTitle("LanDesk Setup v0.3.0")]
+[assembly: AssemblyTitle("LanDesk Setup v0.3.1")]
 [assembly: AssemblyProduct("LanDesk")]
-[assembly: AssemblyVersion("0.3.0.0")]
-[assembly: AssemblyFileVersion("0.3.0.0")]
+[assembly: AssemblyVersion("0.3.1.0")]
+[assembly: AssemblyFileVersion("0.3.1.0")]
 
 namespace LanDeskSetup
 {
@@ -29,7 +29,7 @@ namespace LanDeskSetup
 
         public SetupForm()
         {
-            this.Text = "ติดตั้ง LanDesk v0.3.0 · Setup Wizard";
+            this.Text = "ติดตั้ง LanDesk v0.3.1 · Setup Wizard";
             this.ClientSize = new Size(560, 395);
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
             this.MaximizeBox = false;
@@ -39,7 +39,7 @@ namespace LanDeskSetup
             try { this.Icon = Icon.ExtractAssociatedIcon(Assembly.GetExecutingAssembly().Location); } catch { }
 
             Label lblTitle = new Label();
-            lblTitle.Text = "ติดตั้ง LanDesk v0.3.0 (รีโมทภายในองค์กร)";
+            lblTitle.Text = "ติดตั้ง LanDesk v0.3.1 (รีโมทภายในองค์กร)";
             lblTitle.Font = new Font("Leelawadee UI", 15f, FontStyle.Bold);
             lblTitle.ForeColor = Color.FromArgb(0, 105, 92);
             lblTitle.Location = new Point(22, 18);

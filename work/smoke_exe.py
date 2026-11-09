@@ -5,12 +5,15 @@ from pathlib import Path
 import subprocess
 import time
 
+import re
+
 root = Path.cwd()
+version = re.search(r"VERSION\s*=\s*['\"]([^'\"]+)['\"]", (root / 'LanDesk/security.py').read_text('utf-8')).group(1)
 env = dict(os.environ, LOCALAPPDATA=str(root / 'work/smoke-profile'))
 startup = subprocess.STARTUPINFO()
 startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
 startup.wShowWindow = 0
-process = subprocess.Popen([str(root / 'outputs/v0.3.0/Windows/LanDesk/LanDesk.exe')], env=env, startupinfo=startup)
+process = subprocess.Popen([str(root / f'outputs/v{version}/Windows/LanDesk/LanDesk.exe')], env=env, startupinfo=startup)
 user = ctypes.WinDLL('user32', use_last_error=True)
 callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
 user.EnumWindows.argtypes = [callback_type, wintypes.LPARAM]
@@ -32,7 +35,7 @@ try:
     for attempt in range(30):
         windows.clear()
         user.EnumWindows(collect, 0)
-        matches = [(hwnd, title) for hwnd, title in windows if '0.3.0' in title]
+        matches = [(hwnd, title) for hwnd, title in windows if version in title]
         if matches:
             print('Executable main window:', matches[0][1].encode('ascii', 'backslashreplace').decode('ascii'))
             user.PostMessageW(matches[0][0], 0x10, 0, 0)
