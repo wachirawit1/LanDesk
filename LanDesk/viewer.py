@@ -22,8 +22,10 @@ class Viewer:
         self.frames = queue.Queue(maxsize=1)
         self.permissions = {'control': False, 'clipboard': False, 'files': False}
         self.rect = self.image = None
+        self.canvas_image_id = None
+        self.latest_move_event = None
         self.last_move = 0
-        self.quality = 'sharp'
+        self.quality = 'smooth'
         self.monitor = 0
         self.monitors_count = 1
         self.accept_files = False
@@ -52,13 +54,13 @@ class Viewer:
         ttk.Button(bar, text='เต็มจอ (F11)', command=self.toggle_fullscreen).pack(side='right')
         toolbar = ttk.Frame(self.window, padding=(10, 2, 10, 8))
         toolbar.pack(fill='x')
-        self.quality_var = tk.StringVar(value='ภาพชัด')
+        self.quality_var = tk.StringVar(value='ลื่นไหล')
         quality = ttk.Combobox(toolbar, textvariable=self.quality_var,
-                               values=['ภาพชัด', 'ลื่นไหล', 'ไม่สูญเสียรายละเอียด'],
+                               values=['ลื่นไหล', 'ภาพชัด', 'ไม่สูญเสียรายละเอียด'],
                                state='readonly', width=18)
         quality.pack(side='left')
         quality.bind('<<ComboboxSelected>>', lambda e: setattr(
-            self, 'quality', {'ภาพชัด': 'sharp', 'ลื่นไหล': 'smooth', 'ไม่สูญเสียรายละเอียด': 'lossless'}[self.quality_var.get()]))
+            self, 'quality', {'ลื่นไหล': 'smooth', 'ภาพชัด': 'sharp', 'ไม่สูญเสียรายละเอียด': 'lossless'}[self.quality_var.get()]))
         self.monitor_var = tk.StringVar(value='จอ 1')
         self.monitor_box = ttk.Combobox(toolbar, textvariable=self.monitor_var,
                                         values=['จอ 1'], state='readonly', width=11)
@@ -180,6 +182,9 @@ class Viewer:
 
     def enqueue(self, event):
         if self.permissions['control'] and not self.closed.is_set():
+            if event.get('type') == 'move':
+                self.latest_move_event = event
+                return
             try:
                 self.events.put_nowait(event)
             except queue.Full:
@@ -207,7 +212,7 @@ class Viewer:
                     'y': max(0, min(1, (self.canvas.canvasy(event.y) - y) / max(1, h - 1)))}
 
     def motion(self, event):
-        if time.monotonic() - self.last_move < .03:
+        if time.monotonic() - self.last_move < .015:
             return
         self.last_move = time.monotonic()
         pos = self.position(event)
@@ -408,6 +413,9 @@ class Viewer:
                         request['events'].append(self.events.get_nowait())
                     except queue.Empty:
                         break
+                if getattr(self, 'latest_move_event', None):
+                    request['events'].append(self.latest_move_event)
+                    self.latest_move_event = None
                 try:
                     kind, value = self.actions.get_nowait()
                     if kind == 'files' and self.permissions['files']:
@@ -494,35 +502,45 @@ class Viewer:
     def redraw(self):
         if self.image is None or self.closed.is_set():
             return
-        image = self.image.copy()
         cw, ch = max(1, self.canvas.winfo_width()), max(1, self.canvas.winfo_height())
-        if not self.native.get():
-            image.thumbnail((cw, ch), Image.Resampling.LANCZOS)
+        iw, ih = self.image.size
+        if not self.native.get() and (iw > cw or ih > ch):
+            image = self.image.copy()
+            image.thumbnail((cw, ch), Image.Resampling.BILINEAR)
+        else:
+            image = self.image
         w, h = image.size
         x, y = max(0, (cw - w) // 2), max(0, (ch - h) // 2)
         self.rect = x, y, w, h
         self.photo = ImageTk.PhotoImage(image)
-        self.canvas.delete('all')
-        self.canvas.create_image(x, y, image=self.photo, anchor='nw')
+        if getattr(self, 'canvas_image_id', None) is None:
+            self.canvas_image_id = self.canvas.create_image(x, y, image=self.photo, anchor='nw')
+        else:
+            self.canvas.coords(self.canvas_image_id, x, y)
+            self.canvas.itemconfig(self.canvas_image_id, image=self.photo)
         self.canvas.configure(scrollregion=(0, 0, max(w, cw), max(h, ch)))
 
     def paint(self):
         if self.closed.is_set():
             return
         try:
-            data = self.frames.get_nowait()
-            image = Image.open(io.BytesIO(data))
-            if image.width > 4096 or image.height > 2160:
-                raise ValueError('ภาพมีขนาดเกินกำหนด')
-            image.load()
-            self.image = image
-            self.redraw()
-        except queue.Empty:
-            pass
+            data = None
+            while True:
+                try:
+                    data = self.frames.get_nowait()
+                except queue.Empty:
+                    break
+            if data:
+                image = Image.open(io.BytesIO(data))
+                if image.width > 4096 or image.height > 2160:
+                    raise ValueError('ภาพมีขนาดเกินกำหนด')
+                image.load()
+                self.image = image
+                self.redraw()
         except Exception as error:
             self.failed(str(error))
             return
-        self.window.after(40, self.paint)
+        self.window.after(16, self.paint)
 
     def close(self):
         if self.closed.is_set():

@@ -278,6 +278,7 @@ class App:
                 done.set()
             window.destroy()
         window.protocol('WM_DELETE_WINDOW', finish)
+        window.bind('<Destroy>', lambda e: done.set() if e.widget == window else None)
         if kind == 'trust':
             ttk.Label(frame, text='ยืนยันตัวตนเครื่อง ' + data['address'], font=('Leelawadee UI', 14, 'bold')).pack(anchor='w')
             ttk.Label(frame, text='เปรียบเทียบลายนิ้วมือนี้กับหน้า “ตั้งค่า” ของปลายทาง\nผ่านผู้ใช้หรือฝ่าย IT ก่อนกดเชื่อถือ ครั้งต่อไปจะตรวจให้อัตโนมัติ', wraplength=580).pack(anchor='w', pady=12)
@@ -384,8 +385,16 @@ class App:
             self.host_status.set('🟢 พร้อมรับการเชื่อมต่ออัตโนมัติ · ' + self.mode_text())
         except Exception as error:
             if host:
-                host.stop()
-            messagebox.showerror('เปิดรับไม่ได้', str(error), parent=self.root)
+                try:
+                    host.stop()
+                except Exception:
+                    pass
+            err_msg = str(error)
+            if '10048' in err_msg or 'address already in use' in err_msg.lower():
+                self.host_status.set('⚠️ พอร์ต 45888 ถูกใช้งานอยู่ (มี LanDesk หรือโปรแกรมอื่นเปิดอยู่แล้ว)')
+            else:
+                self.host_status.set('⚠️ ไม่สามารถเปิดรับการเชื่อมต่อได้')
+                messagebox.showerror('เปิดรับไม่ได้', err_msg, parent=self.root)
 
     def stop_host(self):
         if self.host:

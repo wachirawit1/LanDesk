@@ -131,6 +131,10 @@ def connect_pinned(host, port, fingerprint='', trust=None):
     # Trust is an explicit SHA-256 pin, checked BEFORE sending the password.
     context.verify_mode = ssl.CERT_NONE
     raw = socket.create_connection((host, port), timeout=10)
+    try:
+        raw.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+    except OSError:
+        pass
     sock = None
     try:
         sock = context.wrap_socket(raw, server_hostname=host)

@@ -19,6 +19,26 @@ from transfers import TransferPeer
 MAX_CHAT = 1000
 
 
+class BITMAPINFOHEADER(ctypes.Structure):
+    _fields_ = [
+        ('biSize', wintypes.DWORD),
+        ('biWidth', wintypes.LONG),
+        ('biHeight', wintypes.LONG),
+        ('biPlanes', wintypes.WORD),
+        ('biBitCount', wintypes.WORD),
+        ('biCompression', wintypes.DWORD),
+        ('biSizeImage', wintypes.DWORD),
+        ('biXPelsPerMeter', wintypes.LONG),
+        ('biYPelsPerMeter', wintypes.LONG),
+        ('biClrUsed', wintypes.DWORD),
+        ('biClrImportant', wintypes.DWORD),
+    ]
+
+
+class BITMAPINFO(ctypes.Structure):
+    _fields_ = [('bmiHeader', BITMAPINFOHEADER), ('bmiColors', wintypes.DWORD * 3)]
+
+
 def enable_dpi_awareness(user=None):
     user = user or ctypes.windll.user32
     try:
@@ -94,6 +114,7 @@ def draw_cursor_pointer(image, cx, cy):
 class WindowsDesktop:
     def __init__(self):
         self.user = ctypes.windll.user32
+        self.gdi = getattr(ctypes.windll, 'gdi32', None)
         enable_dpi_awareness(self.user)
         self.keys = set()
         self.buttons = set()
@@ -103,6 +124,47 @@ class WindowsDesktop:
         self.height = max(1, int(self.user.GetSystemMetrics(1)))
         self.monitors = enumerate_monitors(self.user)
 
+    def _capture_gdi(self, left, top, width, height):
+        if not getattr(self, 'user', None) or not getattr(self, 'gdi', None):
+            return None
+        w, h = max(1, width), max(1, height)
+        h_screen = self.user.GetDC(0)
+        if not h_screen:
+            return None
+        h_mem = self.gdi.CreateCompatibleDC(h_screen)
+        if not h_mem:
+            self.user.ReleaseDC(0, h_screen)
+            return None
+        bmi = BITMAPINFO()
+        bmi.bmiHeader.biSize = ctypes.sizeof(BITMAPINFOHEADER)
+        bmi.bmiHeader.biWidth = w
+        bmi.bmiHeader.biHeight = -h
+        bmi.bmiHeader.biPlanes = 1
+        bmi.bmiHeader.biBitCount = 32
+        bmi.bmiHeader.biCompression = 0
+        p_bits = ctypes.c_void_p()
+        h_bmp = self.gdi.CreateDIBSection(h_mem, ctypes.byref(bmi), 0, ctypes.byref(p_bits), None, 0)
+        if not h_bmp or not p_bits.value:
+            if h_bmp:
+                self.gdi.DeleteObject(h_bmp)
+            self.gdi.DeleteDC(h_mem)
+            self.user.ReleaseDC(0, h_screen)
+            return None
+        old = self.gdi.SelectObject(h_mem, h_bmp)
+        try:
+            if not self.gdi.BitBlt(h_mem, 0, 0, w, h, h_screen, left, top, 0x40CC0020):
+                return None
+            from PIL import Image
+            buf = ctypes.string_at(p_bits.value, w * h * 4)
+            return Image.frombuffer('RGB', (w, h), buf, 'raw', 'BGRX', 0, 1).copy()
+        except Exception:
+            return None
+        finally:
+            self.gdi.SelectObject(h_mem, old)
+            self.gdi.DeleteObject(h_bmp)
+            self.gdi.DeleteDC(h_mem)
+            self.user.ReleaseDC(0, h_screen)
+
     def frame(self, quality='sharp', monitor=0, draw_cursor=False):
         from PIL import Image, ImageGrab
         monitors = getattr(self, 'monitors', None)
@@ -111,12 +173,25 @@ class WindowsDesktop:
             if monitor == -1 and getattr(self, 'user', None):
                 vx = int(self.user.GetSystemMetrics(76))
                 vy = int(self.user.GetSystemMetrics(77))
+                vw = max(1, int(self.user.GetSystemMetrics(78)))
+                vh = max(1, int(self.user.GetSystemMetrics(79)))
                 self.offset_x, self.offset_y = vx, vy
-                image = ImageGrab.grab(all_screens=True).convert('RGB')
+                image = self._capture_gdi(vx, vy, vw, vh)
+                if image is None:
+                    image = ImageGrab.grab(all_screens=True).convert('RGB')
             elif monitors and isinstance(monitor, int) and 0 < monitor < len(monitors):
                 left, top, right, bottom = monitors[monitor]
                 self.offset_x, self.offset_y = left, top
-                image = ImageGrab.grab(bbox=(left, top, right, bottom), all_screens=True).convert('RGB')
+                image = self._capture_gdi(left, top, right - left, bottom - top)
+                if image is None:
+                    image = ImageGrab.grab(bbox=(left, top, right, bottom), all_screens=True).convert('RGB')
+            elif getattr(self, 'user', None):
+                w = max(1, int(self.user.GetSystemMetrics(0)))
+                h = max(1, int(self.user.GetSystemMetrics(1)))
+                self.offset_x, self.offset_y = 0, 0
+                image = self._capture_gdi(0, 0, w, h)
+                if image is None:
+                    image = ImageGrab.grab(all_screens=False).convert('RGB')
             else:
                 self.offset_x, self.offset_y = 0, 0
                 image = ImageGrab.grab(all_screens=False).convert('RGB')
@@ -140,14 +215,16 @@ class WindowsDesktop:
             except Exception:
                 pass
         if quality == 'smooth':
-            image.thumbnail((1600, 1000))
-        else:
-            image.thumbnail((4096, 2160))
+            image.thumbnail((1600, 900))
+        elif quality != 'lossless':
+            image.thumbnail((3840, 2160))
         out = io.BytesIO()
         if quality == 'lossless':
             image.save(out, format='PNG', compress_level=1)
+        elif quality == 'smooth':
+            image.save(out, format='JPEG', quality=70, subsampling=2)
         else:
-            image.save(out, format='JPEG', quality=75 if quality == 'smooth' else 95, subsampling=0)
+            image.save(out, format='JPEG', quality=82, subsampling=1)
         return out.getvalue()
 
     def shortcut(self, code):
@@ -323,6 +400,10 @@ class Host:
             except OSError:
                 break
             peer = address[0]
+            try:
+                raw.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            except OSError:
+                pass
             connection = raw
             transfer = None
             try:
@@ -481,7 +562,8 @@ class Host:
                     with self.input_lock:
                         if self.control and not self.stop_event.is_set():
                             self.desktop.apply(request.get('events', []))
-                    self.stop_event.wait(max(0, .08 - (time.monotonic() - started)))
+                    target_delay = 0.033 if quality == 'smooth' else (0.045 if quality == 'sharp' else 0.08)
+                    self.stop_event.wait(max(0, target_delay - (time.monotonic() - started)))
             except Exception as error:
                 if not self.stop_event.is_set():
                     self.notify('สิ้นสุดการเชื่อมต่อ: ' + str(error))
