@@ -13,7 +13,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-DEFAULT_GITHUB_REPO = 'owner/landesk'  # Can be customized in settings
+DEFAULT_GITHUB_REPO = 'wachirawit1/LanDesk'
 
 
 def clean_repo_slug(value):
@@ -49,10 +49,10 @@ def is_newer_version(latest_str, current_str):
     return parse_version(latest_str) > parse_version(current_str)
 
 
-def fetch_latest_release(repo_slug, timeout=8, opener=None):
-    slug = clean_repo_slug(repo_slug)
+def fetch_latest_release(repo_slug=None, timeout=8, opener=None):
+    slug = clean_repo_slug(repo_slug or DEFAULT_GITHUB_REPO)
     if not slug or '/' not in slug or slug == 'owner/landesk':
-        raise ValueError('กรุณาระบุที่อยู่ GitHub Repository เช่น your-name/landesk ในหน้าตั้งค่า')
+        slug = DEFAULT_GITHUB_REPO
     url = f'https://api.github.com/repos/{slug}/releases/latest'
     req = urllib.request.Request(
         url,
@@ -194,9 +194,9 @@ def show_update_dialog(root, release, current_version, on_quit=None):
 
     dialog = tk.Toplevel(root)
     apply_window_icon(dialog)
-    dialog.title('LanDesk · พบเวอร์ชันใหม่พร้อมอัปเดต')
-    dialog.geometry('640x530')
-    dialog.minsize(560, 480)
+    dialog.title('อัปเดตโปรแกรม LanDesk')
+    dialog.geometry('480x235')
+    dialog.resizable(False, False)
     dialog.transient(root)
     dialog.attributes('-topmost', True)
     dialog.grab_set()
@@ -204,61 +204,41 @@ def show_update_dialog(root, release, current_version, on_quit=None):
     frame = ttk.Frame(dialog, padding=20)
     frame.pack(fill='both', expand=True)
 
-    header = ttk.Frame(frame)
-    header.pack(fill='x')
-    ttk.Label(header, text='🚀 พบเวอร์ชันใหม่! คุณต้องการอัปเดตเลยหรือไม่?', font=('Leelawadee UI', 15, 'bold'), foreground='#00695c').pack(anchor='w')
+    ttk.Label(
+        frame,
+        text=f"พบเวอร์ชันใหม่ {release.get('tag', '')} พร้อมอัปเดต",
+        font=('Leelawadee UI', 14, 'bold'),
+        foreground='#00695c',
+    ).pack(anchor='w')
 
-    ver_text = f"เวอร์ชันปัจจุบัน: v{current_version}   ➔   เวอร์ชันใหม่: {release.get('tag', '')}"
-    ttk.Label(header, text=ver_text, font=('Leelawadee UI', 11, 'bold')).pack(anchor='w', pady=(4, 2))
-    ttk.Label(header, text=f"หัวข้อ: {release.get('title', '')}", font=('Leelawadee UI', 10)).pack(anchor='w', pady=(0, 10))
-
-    ttk.Label(frame, text='บันทึกการเปลี่ยนแปลง (What’s New):', font=('Leelawadee UI', 10, 'bold')).pack(anchor='w')
-
-    notes_frame = ttk.Frame(frame)
-    notes_frame.pack(fill='both', expand=True, pady=(4, 10))
-    notes_text = tk.Text(notes_frame, wrap='word', height=8, font=('Leelawadee UI', 10), bg='#ffffff', fg='#172d40')
-    notes_scroll = ttk.Scrollbar(notes_frame, orient='vertical', command=notes_text.yview)
-    notes_text.configure(yscrollcommand=notes_scroll.set)
-    notes_text.pack(side='left', fill='both', expand=True)
-    notes_scroll.pack(side='right', fill='y')
-    notes_text.insert('1.0', release.get('body', ''))
-    notes_text.configure(state='disabled')
+    ver_text = f"เวอร์ชันในเครื่อง: v{current_version}   ➔   เวอร์ชันใหม่: {release.get('tag', '')}"
+    ttk.Label(frame, text=ver_text, font=('Leelawadee UI', 10)).pack(anchor='w', pady=(6, 14))
 
     status_var = tk.StringVar()
     size_mb = (release.get('asset_size', 0) / (1024 * 1024))
     if size_mb > 0:
-        status_var.set(f"พร้อมดาวน์โหลด ({release.get('asset_name', '')} · {size_mb:.1f} MB)")
+        status_var.set(f'กดอัปเดตเพื่อดาวน์โหลดและติดตั้งอัตโนมัติ ({size_mb:.1f} MB)')
     else:
-        status_var.set('พร้อมดาวน์โหลดอัปเดต')
+        status_var.set('กดอัปเดตเพื่อดาวน์โหลดและติดตั้งอัตโนมัติ')
 
     progress_var = tk.DoubleVar(value=0)
     prog_bar = ttk.Progressbar(frame, variable=progress_var, maximum=100)
-    prog_bar.pack(fill='x', pady=(0, 4))
+    prog_bar.pack(fill='x', pady=(0, 6))
 
     ttk.Label(frame, textvariable=status_var, font=('Leelawadee UI', 9)).pack(anchor='w', pady=(0, 12))
 
     cancel_event = threading.Event()
 
     btn_row = ttk.Frame(frame)
-    btn_row.pack(fill='x')
-
-    def open_browser():
-        url = release.get('html_url') or 'https://github.com'
-        if hasattr(os, 'startfile'):
-            os.startfile(url)
-        else:
-            import webbrowser
-            webbrowser.open(url)
+    btn_row.pack(fill='x', side='bottom')
 
     def start_auto_update():
         d_url = release.get('download_url')
         if not d_url:
-            messagebox.showinfo('เปิดหน้าดาวน์โหลด', 'ไม่พบไฟล์ติดตั้งอัตโนมัติใน Release นี้ กำลังเปิดหน้าเว็บดาวน์โหลดให้แทนครับ', parent=dialog)
-            open_browser()
+            messagebox.showwarning('ยังไม่มีไฟล์อัปเดต', 'ยังไม่พบไฟล์แพ็กเกจใน Release ล่าสุดนี้ กรุณาลองใหม่อีกครั้งภายหลัง', parent=dialog)
             return
 
         update_btn.configure(state='disabled')
-        browser_btn.configure(state='disabled')
         cancel_btn.configure(text='ยกเลิกดาวน์โหลด', command=lambda: cancel_event.set())
 
         def worker():
@@ -270,18 +250,18 @@ def show_update_dialog(root, release, current_version, on_quit=None):
                 dialog.after(0, lambda: progress_var.set(pct))
                 d_mb = downloaded / (1024 * 1024)
                 t_mb = total / (1024 * 1024)
-                dialog.after(0, lambda: status_var.set(f"กำลังดาวน์โหลด {pct}% ({d_mb:.1f} MB / {t_mb:.1f} MB)..."))
+                dialog.after(0, lambda: status_var.set(f"กำลังดาวน์โหลด {pct}% ({d_mb:.1f} / {t_mb:.1f} MB)..."))
 
             try:
                 download_file(d_url, temp_pkg, progress_callback=on_progress, cancel_event=cancel_event)
-                dialog.after(0, lambda: status_var.set('ดาวน์โหลดสำเร็จ! กำลังติดตั้งและเตรียมรีสตาร์ท...'))
-                time.sleep(0.5)
+                dialog.after(0, lambda: status_var.set('ดาวน์โหลดสำเร็จ! กำลังอัปเดตและรีสตาร์ทโปรแกรม...'))
+                time.sleep(0.4)
 
                 if getattr(sys, 'frozen', False):
                     app_dir = Path(sys.executable).parent
                     apply_update_and_restart(temp_pkg, app_dir, Path(sys.executable).name)
                 else:
-                    dialog.after(0, lambda: messagebox.showinfo('ดาวน์โหลดสำเร็จ', f'ดาวน์โหลดชุดอัปเดตเรียบร้อยแล้วที่:\n{temp_pkg}\n\nเนื่องจากกำลังรันในโหมด Python Source ให้แตกไฟล์และรันเวอร์ชันใหม่ได้เลยครับ', parent=dialog))
+                    dialog.after(0, lambda: messagebox.showinfo('ดาวน์โหลดสำเร็จ', f'ดาวน์โหลดไฟล์อัปเดตเรียบร้อยที่:\n{temp_pkg}', parent=dialog))
                     dialog.destroy()
                     return
 
@@ -292,87 +272,18 @@ def show_update_dialog(root, release, current_version, on_quit=None):
             except InterruptedError:
                 dialog.after(0, lambda: status_var.set('ยกเลิกการดาวน์โหลดแล้ว'))
                 dialog.after(0, lambda: update_btn.configure(state='normal'))
-                dialog.after(0, lambda: browser_btn.configure(state='normal'))
                 dialog.after(0, lambda: cancel_btn.configure(text='ไว้คราวหน้า', command=dialog.destroy))
             except Exception as err:
                 dialog.after(0, lambda: messagebox.showerror('อัปเดตไม่สำเร็จ', f'เกิดข้อผิดพลาดระหว่างอัปเดต:\n{err}', parent=dialog))
                 dialog.after(0, lambda: status_var.set(f'เกิดข้อผิดพลาด: {err}'))
                 dialog.after(0, lambda: update_btn.configure(state='normal'))
-                dialog.after(0, lambda: browser_btn.configure(state='normal'))
                 dialog.after(0, lambda: cancel_btn.configure(text='ไว้คราวหน้า', command=dialog.destroy))
 
         threading.Thread(target=worker, daemon=True).start()
 
-    update_btn = ttk.Button(btn_row, text='⚡ อัปเดตและรีสตาร์ททันที', style='Accent.TButton', command=start_auto_update)
-    update_btn.pack(side='left', padx=(0, 6))
-
-    browser_btn = ttk.Button(btn_row, text='🌐 เปิดหน้า GitHub', command=open_browser)
-    browser_btn.pack(side='left', padx=(0, 6))
+    update_btn = ttk.Button(btn_row, text='⚡ อัปเดตเดี๋ยวนี้', style='Accent.TButton', command=start_auto_update)
+    update_btn.pack(side='left')
 
     cancel_btn = ttk.Button(btn_row, text='ไว้คราวหน้า', command=dialog.destroy)
     cancel_btn.pack(side='right')
-    return dialog
-
-
-def show_repo_prompt_dialog(root, settings, current_version, on_check_now, on_quit=None):
-    import tkinter as tk
-    from tkinter import messagebox, ttk
-
-    dialog = tk.Toplevel(root)
-    dialog.title('LanDesk · ตั้งค่าระบบเช็คอัปเดต GitHub')
-    dialog.geometry('560x310')
-    dialog.resizable(False, False)
-    dialog.transient(root)
-    dialog.grab_set()
-
-    frame = ttk.Frame(dialog, padding=20)
-    frame.pack(fill='both', expand=True)
-
-    ttk.Label(frame, text='ตั้งค่าการตรวจหาอัปเดตอัตโนมัติ (GitHub Releases)', font=('Leelawadee UI', 13, 'bold'), foreground='#00695c').pack(anchor='w')
-    ttk.Label(
-        frame,
-        text='ระบุชื่อ GitHub Repository ที่ใช้เก็บไฟล์ Release ของ LanDesk (เช่น your-name/LanDesk)\nเมื่อมีเวอร์ชันใหม่ โปรแกรมจะเด้งป๊อปอัปถามให้อัปเดตอัตโนมัติเหมือน FanControl',
-        wraplength=510,
-    ).pack(anchor='w', pady=(6, 12))
-
-    cfg = settings.snapshot()
-    repo_var = tk.StringVar(value=cfg.get('github_repo', ''))
-    auto_var = tk.BooleanVar(value=cfg.get('auto_check_update', True))
-
-    ttk.Label(frame, text='GitHub Repository (owner/repo หรือ URL เต็ม):').pack(anchor='w')
-    entry = ttk.Entry(frame, textvariable=repo_var, font=('Consolas', 11))
-    entry.pack(fill='x', pady=(4, 10))
-    entry.focus_set()
-
-    ttk.Checkbutton(frame, text='เช็คเวอร์ชันใหม่อัตโนมัติทุกครั้งที่เปิดโปรแกรมแล้วป๊อปอัปถาม', variable=auto_var).pack(anchor='w', pady=(0, 14))
-
-    btn_row = ttk.Frame(frame)
-    btn_row.pack(fill='x', side='bottom')
-
-    def save_and_check():
-        slug = clean_repo_slug(repo_var.get())
-        if not slug or '/' not in slug:
-            messagebox.showwarning('ระบุชื่อ Repository', 'กรุณากรอกในรูปแบบ owner/repo เช่น my-org/landesk', parent=dialog)
-            return
-        settings.save(github_repo=slug, auto_check_update=bool(auto_var.get()))
-        dialog.destroy()
-        on_check_now()
-
-    def preview_popup():
-        dialog.destroy()
-        demo_rel = {
-            'tag': 'v0.4.0',
-            'version': '0.4.0',
-            'title': 'LanDesk v0.4.0 — อัปเดตฟีเจอร์และการเชื่อมต่อ',
-            'body': '• รองรับการคลิกขวา Copy ไฟล์จากเครื่องเรา แล้วไปคลิกขวา Paste (วาง) ที่เครื่องปลายทางได้ทันที\n• ระบบเช็คอัปเดตอัตโนมัติผ่าน GitHub Releases พร้อมป๊อปอัปถามและอัปเดตในคลิกเดียว\n• ตัวติดตั้ง (Installer) และตัวถอนการติดตั้ง (Uninstaller) แบบครบวงจร',
-            'html_url': 'https://github.com/' + (clean_repo_slug(repo_var.get()) or 'owner/landesk') + '/releases',
-            'download_url': None,
-            'asset_name': 'LanDesk-v0.4.0-Windows-x64.zip',
-            'asset_size': 22 * 1024 * 1024,
-        }
-        show_update_dialog(root, demo_rel, current_version, on_quit)
-
-    ttk.Button(btn_row, text='บันทึกและเช็คอัปเดตทันที', style='Accent.TButton', command=save_and_check).pack(side='left')
-    ttk.Button(btn_row, text='ดูตัวอย่างป๊อปอัปอัปเดต', command=preview_popup).pack(side='left', padx=8)
-    ttk.Button(btn_row, text='ปิด', command=dialog.destroy).pack(side='right')
     return dialog

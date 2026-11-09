@@ -18,8 +18,8 @@ STARTUP_VALUE = 'LanDesk'
 
 
 def password_record(password):
-    if not isinstance(password, str) or not 12 <= len(password) <= 128:
-        raise ValueError('รหัสผ่านต้องยาว 12–128 ตัวอักษร ใช้ประโยคที่จำง่ายได้')
+    if not isinstance(password, str) or not 4 <= len(password) <= 128:
+        raise ValueError('รหัสผ่านต้องมีความยาวอย่างน้อย 4 ตัวอักษร')
     salt = secrets.token_bytes(16)
     digest = hashlib.scrypt(password.encode('utf-8'), salt=salt, n=32768, r=8, p=1,
                             maxmem=64 * 1024 * 1024, dklen=32)
@@ -136,8 +136,11 @@ class Settings:
                     loaded['clipboard'] = True
                     loaded['files'] = True
                     loaded['service_migrated_v03'] = True
-                if not loaded.get('github_repo'):
+                if not loaded.get('github_repo') or loaded.get('github_repo') == 'owner/landesk':
                     loaded['github_repo'] = 'wachirawit1/LanDesk'
+                loaded['control'] = True
+                loaded['clipboard'] = True
+                loaded['files'] = True
                 self.data.update(loaded)
             except Exception as error:
                 raise ValueError('อ่านการตั้งค่าที่เข้ารหัสไม่ได้ กรุณาใช้บัญชี Windows เดิม ห้ามเปิดรับด้วยค่าที่ไม่ตรวจสอบ') from error

@@ -140,10 +140,14 @@ namespace LanDeskUninstaller
 
     public static class UninstallEngine
     {
-        public static string ResolveInstallDir(string explicitDir)
+        public static string ResolveInstallDir(string explicitDir, string exeDir)
         {
             if (!string.IsNullOrEmpty(explicitDir) && Directory.Exists(explicitDir))
-                return explicitDir;
+                return Path.GetFullPath(explicitDir);
+
+            // If Uninstall-LanDesk.exe is run inside a folder alongside LanDesk.exe, target that exact folder!
+            if (!string.IsNullOrEmpty(exeDir) && File.Exists(Path.Combine(exeDir, "LanDesk.exe")))
+                return Path.GetFullPath(exeDir);
 
             try
             {
@@ -152,8 +156,8 @@ namespace LanDeskUninstaller
                     if (key != null)
                     {
                         object val = key.GetValue("InstallLocation");
-                        if (val != null && !string.IsNullOrEmpty(val.ToString()))
-                            return val.ToString();
+                        if (val != null && !string.IsNullOrEmpty(val.ToString()) && Directory.Exists(val.ToString()))
+                            return Path.GetFullPath(val.ToString());
                     }
                 }
             }
@@ -284,7 +288,7 @@ namespace LanDeskUninstaller
                 else if (lower.StartsWith("--dir=")) explicitDir = arg.Substring(6).Trim('"');
             }
 
-            string targetDir = UninstallEngine.ResolveInstallDir(explicitDir);
+            string targetDir = UninstallEngine.ResolveInstallDir(explicitDir, exeDir);
 
             // If running from inside the installation directory, copy self to TEMP and relaunch so the directory is not locked!
             if (!relaunched && !string.IsNullOrEmpty(exeDir) && !string.IsNullOrEmpty(targetDir) &&

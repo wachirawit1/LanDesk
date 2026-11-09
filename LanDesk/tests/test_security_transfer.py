@@ -39,6 +39,8 @@ class SecurityTests(unittest.TestCase):
         self.assertFalse(verify_password('wrong', one))
         self.assertFalse(verify_password('', None))
         self.assertFalse(verify_password('x' * 1000, one))
+        short_four = password_record('1234')
+        self.assertTrue(verify_password('1234', short_four))
         with self.assertRaises(ValueError):
             password_record('123')
 

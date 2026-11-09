@@ -82,33 +82,14 @@ class App:
         self.ip_text = ips()
         ttk.Label(ip_row, text=self.ip_text, font=('Consolas', 19, 'bold')).pack(side='left')
         ttk.Button(ip_row, text='คัดลอก IP', command=self.copy_my_ip).pack(side='left', padx=12)
+        ttk.Button(ip_row, text='ซ่อนไว้เบื้องหลัง (Tray)', command=lambda: self.hide_to_tray(notify=True)).pack(side='right')
+        self.disconnect_btn = ttk.Button(ip_row, text='ตัดการเชื่อมต่อผู้รีโมท', command=self.disconnect_active_session, state='disabled')
+        self.disconnect_btn.pack(side='right', padx=6)
+
         self.mode = tk.StringVar(value=self.mode_text())
-        ttk.Label(receive, textvariable=self.mode, wraplength=820).pack(anchor='w', pady=(6, 8))
-        actions = ttk.Frame(receive)
-        actions.pack(fill='x')
-        self.start_button = ttk.Button(actions, text='เปิดรับการเชื่อมต่อ', style='Accent.TButton', command=self.start_host)
-        self.start_button.pack(side='left')
-        ttk.Button(actions, text='หยุดรับ / ตัดการเชื่อมต่อ', command=self.stop_host).pack(side='left', padx=6)
-        ttk.Button(actions, text='ดูอย่างเดียว', command=self.view_only).pack(side='left')
-        ttk.Button(actions, text='ยกเลิกโอนไฟล์', command=self.cancel_host_transfer).pack(side='left', padx=6)
-        ttk.Button(actions, text='ซ่อนไว้เบื้องหลัง (Tray)', command=lambda: self.hide_to_tray(notify=True)).pack(side='right')
-
-        live_row = ttk.Frame(receive)
-        live_row.pack(fill='x', pady=(8, 2))
-        ttk.Label(live_row, text='สิทธิ์ขณะเชื่อมต่อ:', font=('Leelawadee UI', 10, 'bold')).pack(side='left', padx=(0, 8))
-        self.live_vars = {
-            'control': tk.BooleanVar(value=False),
-            'clipboard': tk.BooleanVar(value=False),
-            'files': tk.BooleanVar(value=False),
-        }
-        for key, label in [('control', 'เมาส์/คีย์บอร์ด'), ('clipboard', 'Clipboard ข้อความ'), ('files', 'รับส่งไฟล์')]:
-            ttk.Checkbutton(
-                live_row, text=label, variable=self.live_vars[key],
-                command=lambda k=key: self.toggle_live_permission(k)
-            ).pack(side='left', padx=6)
-
-        self.host_status = tk.StringVar(value='ปิดรับการเชื่อมต่ออยู่')
-        ttk.Label(receive, textvariable=self.host_status, wraplength=820).pack(anchor='w', pady=(6, 0))
+        ttk.Label(receive, textvariable=self.mode, wraplength=820).pack(anchor='w', pady=(6, 2))
+        self.host_status = tk.StringVar(value='กำลังเตรียมเซอร์วิสรับการเชื่อมต่ออัตโนมัติ...')
+        ttk.Label(receive, textvariable=self.host_status, wraplength=820, foreground='#00695c', font=('Leelawadee UI', 10, 'bold')).pack(anchor='w', pady=(2, 0))
 
         chat_box = ttk.Frame(receive)
         chat_box.pack(fill='x', pady=(8, 0))
@@ -187,21 +168,10 @@ class App:
 
     def check_updates(self, manual=False):
         cfg = self.settings.snapshot()
-        repo = cfg.get('github_repo', '').strip()
-        if not repo:
-            if manual:
-                from updater import show_repo_prompt_dialog
-                show_repo_prompt_dialog(
-                    self.root,
-                    self.settings,
-                    VERSION,
-                    lambda: self.check_updates(manual=True),
-                    self.close,
-                )
-            return
+        repo = (cfg.get('github_repo') or '').strip() or 'wachirawit1/LanDesk'
 
         if manual:
-            self.host_status.set('กำลังตรวจหาอัปเดตเวอร์ชันใหม่จาก GitHub...')
+            self.host_status.set('กำลังตรวจหาอัปเดตเวอร์ชันใหม่...')
 
         def worker():
             try:
@@ -209,16 +179,16 @@ class App:
                 rel = fetch_latest_release(repo)
                 if is_newer_version(rel['version'], VERSION):
                     self.post(show_update_dialog, self.root, rel, VERSION, self.close)
-                    self.post(self.host_status.set, f"พบเวอร์ชันใหม่: {rel['tag']}")
+                    self.post(self.host_status.set, f"พบเวอร์ชันใหม่พร้อมอัปเดต: {rel['tag']}")
                 else:
                     if manual:
-                        self.post(messagebox.showinfo, 'อัปเดตล่าสุดแล้ว',
+                        self.post(messagebox.showinfo, 'เป็นเวอร์ชันล่าสุดแล้ว',
                                   f'คุณกำลังใช้งาน LanDesk เวอร์ชันล่าสุดแล้ว (v{VERSION})', self.root)
                         self.post(self.host_status.set, f'LanDesk v{VERSION} เป็นเวอร์ชันล่าสุดแล้ว')
             except Exception as err:
                 if manual:
                     self.post(messagebox.showwarning, 'ตรวจอัปเดตไม่สำเร็จ',
-                              f'ไม่สามารถตรวจหาอัปเดตได้:\n{err}\n\nกรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ตหรือชื่อ Repository ในหน้าตั้งค่า', self.root)
+                              f'ไม่สามารถเชื่อมต่อตรวจหาอัปเดตได้ในขณะนี้:\n{err}', self.root)
                     self.post(self.host_status.set, 'ตรวจหาอัปเดตไม่สำเร็จ')
 
         threading.Thread(target=worker, daemon=True).start()
@@ -323,12 +293,14 @@ class App:
             else:
                 ttk.Label(frame, text='เครื่องนี้ไม่ได้เปิดใช้การเข้าด้วยรหัสผ่าน').pack(anchor='w', pady=8)
         else:
-            ttk.Label(frame, text='เครื่อง ' + data['peer'] + ' ขอรีโมท', font=('Leelawadee UI', 14, 'bold')).pack(anchor='w')
-            ttk.Label(frame, text='อนุญาตเฉพาะเจ้าหน้าที่ที่คุณกำลังติดต่อ · หมดเวลาใน 30 วินาที').pack(anchor='w', pady=12)
-            permissions = {key: tk.BooleanVar(value=True) for key in ('control', 'clipboard', 'files')}
-            for key, label in [('control', 'ควบคุมเมาส์และคีย์บอร์ด'), ('clipboard', 'คัดลอก / วางข้อความ'), ('files', 'รับส่งไฟล์ / คัดลอกไฟล์')]:
-                ttk.Checkbutton(frame, text=label, variable=permissions[key]).pack(anchor='w', pady=4)
-            ttk.Button(frame, text='อนุญาตตามสิทธิ์ที่เลือก', command=lambda: finish({k: v.get() for k, v in permissions.items()})).pack(fill='x', pady=12)
+            ttk.Label(frame, text='เครื่อง ' + data['peer'] + ' ขอเชื่อมต่อรีโมท', font=('Leelawadee UI', 14, 'bold')).pack(anchor='w')
+            ttk.Label(frame, text='กดอนุญาตเพื่อให้ผู้เชื่อมต่อเข้ามาควบคุมหน้าจอและรับส่งไฟล์ได้ทันที · หมดเวลาใน 30 วินาที').pack(anchor='w', pady=12)
+            ttk.Button(
+                frame,
+                text='อนุญาตให้เชื่อมต่อและควบคุม',
+                style='Accent.TButton',
+                command=lambda: finish({'control': True, 'clipboard': True, 'files': True}),
+            ).pack(fill='x', pady=8)
         ttk.Button(frame, text='ยกเลิก / ปฏิเสธ', command=finish).pack(fill='x', pady=(8, 0))
         def check():
             if done.is_set():
@@ -344,22 +316,16 @@ class App:
         return answer is not None, answer or {}
 
     def on_host_session(self, active, peer, perms):
-        for key, var in self.live_vars.items():
-            var.set(bool(perms.get(key)) if active else False)
+        if hasattr(self, 'disconnect_btn'):
+            self.disconnect_btn.configure(state='normal' if active else 'disabled')
         if active:
             self.append_host_chat('ระบบ', f'เริ่มการเชื่อมต่อกับ {peer}')
         else:
             self.append_host_chat('ระบบ', f'สิ้นสุดการเชื่อมต่อกับ {peer}')
 
-    def toggle_live_permission(self, key):
-        if not self.host or not self.host.connected_peer:
-            self.live_vars[key].set(False)
-            return
-        allowed = bool(self.live_vars[key].get())
-        self.host.set_permission(key, allowed)
-        labels = {'control': 'เมาส์/คีย์บอร์ด', 'clipboard': 'Clipboard', 'files': 'ไฟล์'}
-        state_str = 'เปิดสิทธิ์' if allowed else 'ถอนสิทธิ์'
-        self.host_status.set(f'{state_str} {labels[key]} แล้ว')
+    def disconnect_active_session(self):
+        self.stop_host()
+        self.root.after(150, self.start_host)
 
     def append_host_chat(self, sender, text):
         self.host_chat_log.configure(state='normal')
@@ -403,8 +369,7 @@ class App:
             )
             host.start(self.settings.snapshot()['port'])
             self.host = host
-            self.start_button.configure(state='disabled')
-            self.host_status.set('พร้อมรับการเชื่อมต่อ · ' + self.mode_text())
+            self.host_status.set('🟢 พร้อมรับการเชื่อมต่ออัตโนมัติ · ' + self.mode_text())
         except Exception as error:
             if host:
                 host.stop()
@@ -414,16 +379,9 @@ class App:
         if self.host:
             self.host.stop()
             self.host = None
-        for var in self.live_vars.values():
-            var.set(False)
-        self.start_button.configure(state='normal')
-        self.host_status.set('ปิดรับการเชื่อมต่อแล้ว')
-
-    def view_only(self):
-        if self.host:
-            self.host.set_control(False)
-            self.live_vars['control'].set(False)
-            self.host_status.set('ถอนสิทธิ์เมาส์และคีย์บอร์ดแล้ว · ไฟล์ยังขึ้นกับสิทธิ์ที่อนุญาต')
+        if hasattr(self, 'disconnect_btn'):
+            self.disconnect_btn.configure(state='disabled')
+        self.host_status.set('ตัดการเชื่อมต่อแล้ว')
 
     def save_contact(self):
         try:

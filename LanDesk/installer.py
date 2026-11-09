@@ -271,7 +271,7 @@ def show_installer_dialog(parent=None, on_quit=None):
 
     dir_box = ttk.LabelFrame(frame, text=' โฟลเดอร์สำหรับติดตั้ง (รวมตัวถอนการติดตั้ง Uninstall-LanDesk.exe) ', padding=10)
     dir_box.pack(fill='x', pady=(0, 12))
-    dir_var = tk.StringVar(value=str(default_install_dir()))
+    dir_var = tk.StringVar(value=str(get_installed_dir()))
     dir_row = ttk.Frame(dir_box)
     dir_row.pack(fill='x')
     ttk.Entry(dir_row, textvariable=dir_var).pack(side='left', fill='x', expand=True)
@@ -316,8 +316,9 @@ def show_installer_dialog(parent=None, on_quit=None):
             messagebox.showerror('ติดตั้งไม่สำเร็จ', str(err), parent=win)
 
     def do_uninstall_from_here():
+        chosen_dir = dir_var.get().strip()
         win.destroy()
-        show_uninstaller_dialog(parent=parent, on_quit=on_quit)
+        show_uninstaller_dialog(parent=parent, on_quit=on_quit, target_dir=Path(chosen_dir) if chosen_dir else None)
 
     ttk.Button(btn_row, text='ติดตั้งลงเครื่องทันที', style='Accent.TButton', command=do_install).pack(side='left')
     ttk.Button(btn_row, text='ถอนการติดตั้ง (Uninstall)…', command=do_uninstall_from_here).pack(side='left', padx=8)
@@ -325,12 +326,12 @@ def show_installer_dialog(parent=None, on_quit=None):
     return win
 
 
-def show_uninstaller_dialog(parent=None, on_quit=None):
+def show_uninstaller_dialog(parent=None, on_quit=None, target_dir=None):
     import tkinter as tk
     from tkinter import messagebox, ttk
     from tray_win import apply_window_icon
 
-    target_dir = get_installed_dir()
+    target_dir = Path(target_dir).resolve() if target_dir else get_installed_dir()
     win = tk.Toplevel(parent) if parent else tk.Tk()
     apply_window_icon(win)
     win.title('ถอนการติดตั้ง LanDesk (Uninstall)')
