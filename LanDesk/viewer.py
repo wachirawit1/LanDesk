@@ -456,8 +456,10 @@ class Viewer:
                     if isinstance(msg, dict) and msg.get('op') == 'cancel':
                         transfer.receive(msg)
                         self.app.post(self.progress_var.set, 0)
-                    elif not self.permissions['files'] or (msg.get('op') == 'begin' and not self.accept_files):
-                        raise ValueError('ปฏิเสธการรับไฟล์ที่ไม่ได้ร้องขอ')
+                    elif not self.permissions.get('files'):
+                        transfer.abort(notify_peer=True)
+                        self.action('cancel_transfer', None)
+                        self.app.post(self.set_transfer_status, 'ยกเลิกการรับไฟล์ (ยังไม่ได้รับอนุญาตสิทธิ์ไฟล์)')
                     else:
                         transfer.receive(msg)
                         self.app.post(self.progress_var.set, transfer.progress)
@@ -466,12 +468,11 @@ class Viewer:
                         if isinstance(chat_text, str) and chat_text.strip():
                             self.app.post(self.append_chat, self.remote_alias, chat_text.strip()[:1000])
                 if 'clipboard_text' in meta:
-                    if not self.permissions['clipboard']:
-                        raise ValueError('ไม่ได้อนุญาตข้อความ Clipboard')
-                    self.last_text = meta['clipboard_text']
-                    self.app.clipboard.text(meta['clipboard_text'])
-                    self.last_clip_seq = self.app.clipboard.sequence_number()
-                    self.app.post(self.set_transfer_status, 'รับข้อความแล้ว · วางในเครื่องนี้ด้วย Ctrl+V หรือคลิกขวา Paste')
+                    if self.permissions.get('clipboard') and getattr(self.app, 'clipboard', None):
+                        self.last_text = meta['clipboard_text']
+                        self.app.clipboard.text(meta['clipboard_text'])
+                        self.last_clip_seq = self.app.clipboard.sequence_number()
+                        self.app.post(self.set_transfer_status, 'รับข้อความแล้ว · วางในเครื่องนี้ด้วย Ctrl+V หรือคลิกขวา Paste')
                 request = {'events': [], 'quality': self.quality, 'monitor': self.monitor,
                            'draw_cursor': bool(self.draw_cursor.get())}
                 while True:

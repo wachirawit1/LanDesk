@@ -603,8 +603,9 @@ class Host:
                         msg = request['transfer']
                         if isinstance(msg, dict) and msg.get('op') == 'cancel':
                             transfer.receive(msg)
-                        elif not self.permissions['files']:
-                            raise ValueError('ไม่มีสิทธิ์โอนไฟล์')
+                        elif not self.permissions.get('files'):
+                            transfer.abort(notify_peer=True)
+                            self.notify('ไม่มีสิทธิ์โอนไฟล์ ยกเลิกการส่ง')
                         else:
                             transfer.receive(msg)
                     if 'chat' in request and request['chat'] is not None:
