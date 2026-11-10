@@ -215,9 +215,11 @@ class WindowsDesktop:
             except Exception:
                 pass
         if quality == 'smooth':
-            image.thumbnail((1600, 900))
-        elif quality != 'lossless':
-            image.thumbnail((3840, 2160))
+            from PIL import Image as _PIL_Image
+            image = image.resize((1600, 900), _PIL_Image.Resampling.NEAREST)
+        elif quality != 'lossless' and (image.width > 3840 or image.height > 2160):
+            from PIL import Image as _PIL_Image
+            image = image.resize((3840, 2160), _PIL_Image.Resampling.NEAREST)
         out = io.BytesIO()
         if quality == 'lossless':
             image.save(out, format='PNG', compress_level=1)
@@ -468,7 +470,7 @@ class Host:
                     received_paths.append(path)
                     self.audit('file_received', peer, path.name)
                     if self.clipboard and self.permissions['files']:
-                        self.clipboard.files(received_paths[-50:])
+                        self.clipboard.files(received_paths[-500:])
                 transfer = TransferPeer(self.receive_directory or Path.cwd() / 'Received', complete, self.notify)
                 self.transfer = transfer
                 quality, monitor, draw_cursor, previous, extra = 'sharp', 0, False, None, {}
@@ -484,6 +486,20 @@ class Host:
                     if self.chat_out:
                         extra['chat'] = list(self.chat_out)
                         self.chat_out.clear()
+                    # Auto-detect remote clipboard changes (e.g. user right-clicks Copy on host)
+                    if self.clipboard and (self.permissions['clipboard'] or self.permissions['files']):
+                        try:
+                            h_seq = self.clipboard.sequence_number()
+                            if h_seq and h_seq != getattr(self, 'last_h_seq', 0):
+                                self.last_h_seq = h_seq
+                                c_data = self.clipboard.read()
+                                if 'text' in c_data and self.permissions['clipboard']:
+                                    extra['clipboard_text'] = c_data['text']
+                                elif c_data.get('files') and self.permissions['files']:
+                                    transfer.queue_files(c_data['files'])
+                                    self.audit('files_sent', peer, str(len(c_data['files'])))
+                        except Exception:
+                            pass
                     send_json(connection, {**self.permissions, 'monitors': monitors_count,
                                            'frame': changed, 'transfer': xfer, **extra})
                     extra = {}
@@ -493,6 +509,10 @@ class Host:
                     request = receive_json(connection, 1024 * 1024)
                     if request.get('stop') or self.stop_event.is_set():
                         break
+                    # Apply mouse and keyboard input immediately to reduce input lag to minimum
+                    with self.input_lock:
+                        if self.control and not self.stop_event.is_set():
+                            self.desktop.apply(request.get('events', []))
                     requested_quality = request.get('quality', quality)
                     if requested_quality not in ('sharp', 'smooth', 'lossless'):
                         raise ValueError('โหมดภาพไม่รองรับ')
@@ -559,9 +579,6 @@ class Host:
                                 self.audit('files_sent', peer, str(len(content['files'])))
                         else:
                             raise ValueError('คำสั่ง Clipboard ไม่รองรับ')
-                    with self.input_lock:
-                        if self.control and not self.stop_event.is_set():
-                            self.desktop.apply(request.get('events', []))
                     target_delay = 0.033 if quality == 'smooth' else (0.045 if quality == 'sharp' else 0.08)
                     self.stop_event.wait(max(0, target_delay - (time.monotonic() - started)))
             except Exception as error:

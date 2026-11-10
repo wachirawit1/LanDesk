@@ -10,9 +10,9 @@ import zipfile
 from pathlib import Path
 
 CHUNK = 192 * 1024
-MAX_FILE = 100 * 1024 * 1024
-MAX_SESSION = 1024 * 1024 * 1024
-MAX_FOLDER_FILES = 2000
+MAX_FILE = 1024 * 1024 * 1024
+MAX_SESSION = 5 * 1024 * 1024 * 1024
+MAX_FOLDER_FILES = 5000
 
 
 def safe_name(name):
@@ -92,8 +92,8 @@ class TransferPeer:
 
     def queue_files(self, paths, auto_paste=False):
         resolved = [Path(p).resolve() for p in paths]
-        if len(resolved) + len(self.pending) > 50:
-            raise ValueError('ส่งได้ครั้งละไม่เกิน 50 รายการ')
+        if len(resolved) + len(self.pending) > 500:
+            raise ValueError('ส่งได้ครั้งละไม่เกิน 500 รายการ')
         staged_items = []
         try:
             for path in resolved:

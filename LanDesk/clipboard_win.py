@@ -50,8 +50,8 @@ class Clipboard:
             if self.user.IsClipboardFormatAvailable(15):
                 handle = self.user.GetClipboardData(15)
                 count = self.shell.DragQueryFileW(handle, 0xffffffff, None, 0)
-                if count > 50:
-                    raise ValueError('คัดลอกได้ไม่เกิน 50 ไฟล์')
+                if count > 500:
+                    raise ValueError('คัดลอกได้ไม่เกิน 500 ไฟล์')
                 paths = []
                 for index in range(count):
                     length = self.shell.DragQueryFileW(handle, index, None, 0)

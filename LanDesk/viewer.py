@@ -68,8 +68,8 @@ class Viewer:
         self.monitor_box.bind('<<ComboboxSelected>>', self.select_monitor)
         self.native = tk.BooleanVar(value=False)
         ttk.Checkbutton(toolbar, text='ขนาด 100%', variable=self.native, command=self.redraw).pack(side='left', padx=8)
-        self.draw_cursor = tk.BooleanVar(value=True)
-        ttk.Checkbutton(toolbar, text='เมาส์ปลายทาง', variable=self.draw_cursor).pack(side='left', padx=(0, 8))
+        self.draw_cursor = tk.BooleanVar(value=False)
+        ttk.Checkbutton(toolbar, text='เงาเมาส์ปลายทาง', variable=self.draw_cursor).pack(side='left', padx=(0, 8))
         ttk.Button(toolbar, text='ส่งไฟล์…', command=self.choose_files).pack(side='left')
         ttk.Button(toolbar, text='ส่งโฟลเดอร์…', command=self.choose_folder).pack(side='left', padx=4)
         ttk.Button(toolbar, text='โฟลเดอร์ไฟล์ที่รับ', command=self.open_received).pack(side='left', padx=4)
@@ -185,6 +185,12 @@ class Viewer:
             if event.get('type') == 'move':
                 self.latest_move_event = event
                 return
+            if getattr(self, 'latest_move_event', None):
+                try:
+                    self.events.put_nowait(self.latest_move_event)
+                except queue.Full:
+                    pass
+                self.latest_move_event = None
             try:
                 self.events.put_nowait(event)
             except queue.Full:
@@ -212,7 +218,7 @@ class Viewer:
                     'y': max(0, min(1, (self.canvas.canvasy(event.y) - y) / max(1, h - 1)))}
 
     def motion(self, event):
-        if time.monotonic() - self.last_move < .015:
+        if time.monotonic() - self.last_move < .008:
             return
         self.last_move = time.monotonic()
         pos = self.position(event)
@@ -506,7 +512,8 @@ class Viewer:
         iw, ih = self.image.size
         if not self.native.get() and (iw > cw or ih > ch):
             image = self.image.copy()
-            image.thumbnail((cw, ch), Image.Resampling.BILINEAR)
+            resample_mode = Image.Resampling.NEAREST if getattr(self, 'quality', 'smooth') == 'smooth' else Image.Resampling.BILINEAR
+            image.thumbnail((cw, ch), resample_mode)
         else:
             image = self.image
         w, h = image.size
