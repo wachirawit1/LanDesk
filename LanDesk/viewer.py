@@ -1,3 +1,5 @@
+import ctypes
+from ctypes import wintypes
 import io
 import os
 import queue
@@ -9,6 +11,125 @@ from PIL import Image, ImageTk
 from protocol import connect_pinned, receive_json, receive_packet, send_json
 from transfers import TransferPeer
 from tray_win import apply_window_icon
+
+
+class KBDLLHOOKSTRUCT(ctypes.Structure):
+    _fields_ = [
+        ('vkCode', wintypes.DWORD),
+        ('scanCode', wintypes.DWORD),
+        ('flags', wintypes.DWORD),
+        ('time', wintypes.DWORD),
+        ('dwExtraInfo', ctypes.c_size_t),
+    ]
+
+HOOKPROC = ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM)
+
+
+class LowLevelKeyboardHook:
+    def __init__(self, viewer):
+        self.viewer = viewer
+        self.user32 = ctypes.windll.user32
+        self.user32.SetWindowsHookExW.argtypes = [ctypes.c_int, HOOKPROC, wintypes.HINSTANCE, wintypes.DWORD]
+        self.user32.SetWindowsHookExW.restype = wintypes.HHOOK
+        self.user32.UnhookWindowsHookEx.argtypes = [wintypes.HHOOK]
+        self.user32.UnhookWindowsHookEx.restype = wintypes.BOOL
+        self.user32.CallNextHookEx.argtypes = [wintypes.HHOOK, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM]
+        self.user32.CallNextHookEx.restype = ctypes.c_long
+
+        self.c_proc = HOOKPROC(self._hook_proc)
+        self.hook_id = None
+        self.viewer_root_hwnd = None
+
+    def start(self):
+        if self.hook_id:
+            return
+        try:
+            self.viewer.window.update_idletasks()
+            w_id = self.viewer.window.winfo_id()
+            self.viewer_root_hwnd = self.user32.GetAncestor(w_id, 2)
+        except Exception:
+            self.viewer_root_hwnd = None
+
+        self.hook_id = self.user32.SetWindowsHookExW(13, self.c_proc, 0, 0)
+
+    def stop(self):
+        if self.hook_id:
+            try:
+                self.user32.UnhookWindowsHookEx(self.hook_id)
+            except Exception:
+                pass
+            self.hook_id = None
+
+    def _hook_proc(self, nCode, wParam, lParam):
+        if nCode < 0 or not self.viewer or self.viewer.closed.is_set():
+            return self.user32.CallNextHookEx(self.hook_id, nCode, wParam, lParam)
+
+        fg = self.user32.GetForegroundWindow()
+        if not fg or not self.viewer_root_hwnd:
+            return self.user32.CallNextHookEx(self.hook_id, nCode, wParam, lParam)
+
+        fg_root = self.user32.GetAncestor(fg, 2)
+        if fg_root != self.viewer_root_hwnd and fg != self.viewer_root_hwnd:
+            return self.user32.CallNextHookEx(self.hook_id, nCode, wParam, lParam)
+
+        if getattr(self.viewer, 'chat_visible', False):
+            try:
+                focused = self.viewer.window.focus_get()
+                if focused in (getattr(self.viewer, 'chat_entry', None), getattr(self.viewer, 'chat_log', None)):
+                    return self.user32.CallNextHookEx(self.hook_id, nCode, wParam, lParam)
+            except Exception:
+                pass
+
+        kb = KBDLLHOOKSTRUCT.from_address(lParam)
+        vk = kb.vkCode
+        is_down = wParam in (0x0100, 0x0104)
+        is_up = wParam in (0x0101, 0x0105)
+
+        # 1. Emergency Exit: Ctrl + Alt + F12
+        if vk == 0x7B:
+            ctrl = bool(self.user32.GetKeyState(0x11) & 0x8000)
+            alt = bool(self.user32.GetKeyState(0x12) & 0x8000)
+            if ctrl and alt:
+                if is_down:
+                    self.viewer.window.after(0, self.viewer.close)
+                return 1
+
+        # 2. Fullscreen Toggle: F11
+        if vk == 0x7A:
+            if is_down:
+                self.viewer.window.after(0, self.viewer.toggle_fullscreen)
+            return 1
+
+        # 3. Grave Accent (~ / VK_OEM_3 = 192) - Switch Remote Language
+        if vk == 192:
+            shift = bool(self.user32.GetKeyState(0x10) & 0x8000)
+            if not shift:
+                if is_down:
+                    self.viewer.window.after(0, self.viewer.switch_remote_language)
+                return 1
+
+        # 4. Clipboard shortcuts: Ctrl+C / Ctrl+V
+        ctrl = bool(self.user32.GetKeyState(0x11) & 0x8000)
+        if ctrl and vk in (67, 86) and is_down:
+            if self.viewer.permissions.get('clipboard') or self.viewer.permissions.get('files'):
+                if vk == 67:
+                    self.viewer.window.after(0, self.viewer.copy_remote)
+                else:
+                    self.viewer.window.after(0, self.viewer.paste_local)
+                return 1
+
+        # 5. Forward all keyboard events exclusively to remote machine
+        if self.viewer.permissions.get('control', False):
+            if is_down or is_up:
+                self.viewer.enqueue({
+                    'type': 'key',
+                    'code': vk,
+                    'down': is_down,
+                })
+            # Return 1: suppress from local machine entirely!
+            return 1
+
+        return self.user32.CallNextHookEx(self.hook_id, nCode, wParam, lParam)
 
 
 class Viewer:
@@ -92,9 +213,9 @@ class Viewer:
         chat_row = ttk.Frame(self.chat_panel)
         chat_row.pack(fill='x', pady=(4, 0))
         self.chat_input = tk.StringVar()
-        chat_entry = ttk.Entry(chat_row, textvariable=self.chat_input)
-        chat_entry.pack(side='left', fill='x', expand=True)
-        chat_entry.bind('<Return>', lambda e: self.send_chat())
+        self.chat_entry = ttk.Entry(chat_row, textvariable=self.chat_input)
+        self.chat_entry.pack(side='left', fill='x', expand=True)
+        self.chat_entry.bind('<Return>', lambda e: self.send_chat())
         ttk.Button(chat_row, text='ส่ง', command=self.send_chat).pack(side='right', padx=(6, 0))
         self.canvas = tk.Canvas(surface, bg='#111c27', highlightthickness=0, takefocus=True, cursor='arrow')
         horizontal = ttk.Scrollbar(surface, orient='horizontal', command=self.canvas.xview)
@@ -119,11 +240,15 @@ class Viewer:
         self.canvas.bind('<Control-Alt-F12>', lambda e: self.close())
         self.window.bind('<Control-Alt-F12>', lambda e: self.close())
         self.canvas.bind('<F11>', lambda e: self.toggle_fullscreen())
+        self.keyboard_hook = LowLevelKeyboardHook(self)
+        self.keyboard_hook.start()
         self.window.after(40, self.paint)
         threading.Thread(target=self.run, args=(host, port), daemon=True).start()
 
     def toggle_fullscreen(self):
-        self.window.attributes('-fullscreen', not self.window.attributes('-fullscreen'))
+        new_val = not self.window.attributes('-fullscreen')
+        self.window.attributes('-fullscreen', new_val)
+        self.canvas.focus_set()
 
     def toggle_chat(self):
         if self.chat_visible:
@@ -239,6 +364,8 @@ class Viewer:
             self.action('switch_lang', None)
 
     def key(self, event, down):
+        if getattr(self, 'keyboard_hook', None) and self.keyboard_hook.hook_id:
+            return 'break'
         if down and event.keycode == 192:
             self.switch_remote_language()
         if down and event.state & 4 and event.keycode in (67, 86) and (self.permissions['clipboard'] or self.permissions['files']):
@@ -570,6 +697,12 @@ class Viewer:
         if self.closed.is_set():
             return
         self.closed.set()
+        if getattr(self, 'keyboard_hook', None):
+            try:
+                self.keyboard_hook.stop()
+            except Exception:
+                pass
+            self.keyboard_hook = None
         if self.sock:
             try:
                 import socket

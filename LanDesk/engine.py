@@ -123,6 +123,13 @@ class WindowsDesktop:
         self.width = max(1, int(self.user.GetSystemMetrics(0)))
         self.height = max(1, int(self.user.GetSystemMetrics(1)))
         self.monitors = enumerate_monitors(self.user)
+        try:
+            self.user.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+            self.user.PostMessageW.restype = wintypes.BOOL
+            self.user.LoadKeyboardLayoutW.argtypes = [wintypes.LPCWSTR, wintypes.UINT]
+            self.user.LoadKeyboardLayoutW.restype = wintypes.HKL
+        except Exception:
+            pass
 
     def _capture_gdi(self, left, top, width, height):
         if not getattr(self, 'user', None) or not getattr(self, 'gdi', None):
@@ -237,18 +244,39 @@ class WindowsDesktop:
     def switch_language(self):
         if not getattr(self, 'user', None):
             return
-        # 1. Windows standard language switch (Win + Space)
-        self.user.keybd_event(0x5B, 0x5B, 1, 0)
-        self.user.keybd_event(0x20, 0x39, 0, 0)
-        self.user.keybd_event(0x20, 0x39, 2, 0)
-        self.user.keybd_event(0x5B, 0x5B, 3, 0)
-        # 2. Grave Accent switch (~ / VK_OEM_3 with hardware scan code 0x29)
-        self.user.keybd_event(0xC0, 0x29, 0, 0)
-        self.user.keybd_event(0xC0, 0x29, 2, 0)
-        # 3. Post WM_INPUTLANGCHANGEREQUEST
         hwnd = self.user.GetForegroundWindow()
+        switched = False
         if hwnd:
-            self.user.PostMessageW(hwnd, 0x0050, 2, 0)
+            try:
+                tid = self.user.GetWindowThreadProcessId(hwnd, None)
+                curr = self.user.GetKeyboardLayout(tid)
+                num = self.user.GetKeyboardLayoutList(0, None)
+                if num > 1:
+                    hkls = (wintypes.HKL * num)()
+                    self.user.GetKeyboardLayoutList(num, hkls)
+                    hkl_list = [h for h in hkls]
+                    idx = 0
+                    for i, h in enumerate(hkl_list):
+                        if (h & 0xFFFF) == (curr & 0xFFFF):
+                            idx = (i + 1) % len(hkl_list)
+                            break
+                    target_hkl = hkl_list[idx]
+                else:
+                    target_code = '0000041E' if (curr & 0xFFFF) == 0x0409 else '00000409'
+                    target_hkl = self.user.LoadKeyboardLayoutW(target_code, 1)
+
+                if target_hkl:
+                    self.user.PostMessageW(hwnd, 0x0050, 0, target_hkl)
+                    switched = True
+            except Exception:
+                pass
+
+        if not switched or not hwnd:
+            try:
+                self.user.keybd_event(0xC0, 0x29, 0, 0)
+                self.user.keybd_event(0xC0, 0x29, 2, 0)
+            except Exception:
+                pass
 
     def apply(self, events):
         if not isinstance(events, list) or len(events) > 256:
@@ -279,9 +307,11 @@ class WindowsDesktop:
                 if type(code) is not int or not 8 <= code <= 254 or type(down) is not bool:
                     raise ValueError('รหัสคีย์ไม่ถูกต้อง')
                 extended = code in {33, 34, 35, 36, 37, 38, 39, 40, 45, 46, 91, 92, 111, 163, 165}
-                scan = self.user.MapVirtualKeyW(code, 0) if getattr(self, 'user', None) else 0
+                scan = 0x29 if code == 192 else (self.user.MapVirtualKeyW(code, 0) if getattr(self, 'user', None) else 0)
                 self.user.keybd_event(code, scan, (1 if extended else 0) | (0 if down else 2), 0)
                 (self.keys.add if down else self.keys.discard)(code)
+            elif kind == 'lang':
+                self.switch_language()
             elif kind == 'wheel':
                 delta = event.get('delta')
                 if type(delta) is not int or not -1200 <= delta <= 1200:

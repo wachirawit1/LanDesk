@@ -155,11 +155,12 @@ def create_restart_script(staging_folder, app_folder, target_exe='LanDesk.exe'):
     app_str = str(Path(app_folder).resolve())
     exe_name = target_exe
 
-    # Batch script waits for the old LanDesk process to exit, copies files over, launches new exe, and cleans up
+    # Batch script forcibly closes old LanDesk processes, copies files over, launches new exe, and cleans up
     content = f"""@echo off
 setlocal
 cd /d "%TEMP%"
-ping 127.0.0.1 -n 3 > nul
+taskkill /F /IM LanDesk.exe >nul 2>&1
+ping 127.0.0.1 -n 2 > nul
 robocopy "{staging_str}" "{app_str}" /E /IS /IT /NP /NJH /NJS
 cd /d "{app_str}"
 start "" "{app_str}\\{exe_name}"

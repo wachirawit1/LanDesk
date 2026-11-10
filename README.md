@@ -1,12 +1,12 @@
 # LanDesk Intranet Remote Desktop
 
-LanDesk 0.3.2 is an AnyDesk-inspired Windows intranet remote desktop pilot. Connect by IP or from the built-in Address Book with explicit consent, or opt in to password access at the receiving computer. It includes a single-file Setup Installer (`LanDesk-Setup-v0.3.2.exe`), automatic background Tray service, GitHub auto-update, seamless file clipboard copy-paste, TLS 1.2+, persistent certificate pinning, scrypt password hashes, Windows DPAPI, multi-monitor switching, in-session chat, and live permission toggles.
+LanDesk 0.3.3 is an AnyDesk-inspired Windows intranet remote desktop pilot. Connect by IP or from the built-in Address Book with explicit consent, or opt in to password access at the receiving computer. It includes a single-file Setup Installer (`LanDesk-Setup-v0.3.3.exe`), automatic background Tray service, GitHub auto-update, exclusive low-level keyboard hook, direct Thai/English language switching, seamless file clipboard copy-paste, TLS 1.2+, persistent certificate pinning, scrypt password hashes, Windows DPAPI, multi-monitor switching, in-session chat, and live permission toggles.
 
 ## Download and run
 
-The current release is under `outputs/v0.3.2/` and `releases/`:
-- **Single-file Installer (Recommended):** Run `LanDesk-Setup-v0.3.2.exe` for one-click installation with desktop shortcuts and auto-start background service.
-- **Portable ZIP:** Extract `LanDesk-v0.3.2-Windows-x64.zip` and run `LanDesk.exe`.
+The current release is under `outputs/v0.3.3/` and `releases/`:
+- **Single-file Installer (Recommended):** Run `LanDesk-Setup-v0.3.3.exe` for one-click installation with desktop shortcuts and auto-start background service.
+- **Portable ZIP:** Extract `LanDesk-v0.3.3-Windows-x64.zip` and run `LanDesk.exe`.
 
 Verify integrity against `SHA256SUMS.txt`.
 

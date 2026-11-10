@@ -123,6 +123,13 @@ def install_landesk(source_dir=None, install_dir=None, desktop_shortcut=True, st
     dst = Path(install_dir or default_install_dir()).resolve()
     dst.mkdir(parents=True, exist_ok=True)
 
+    # Forcibly terminate any running instance so binaries are not locked during installation/upgrade
+    try:
+        subprocess.run(['taskkill', '/F', '/IM', 'LanDesk.exe'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(0.5)
+    except Exception:
+        pass
+
     excluded_suffixes = {'.dat', '.pem', '.key', '.partial', '.jsonl', '.bak'}
     if src != dst:
         for item in src.iterdir():
@@ -137,7 +144,14 @@ def install_landesk(source_dir=None, install_dir=None, desktop_shortcut=True, st
                 try:
                     shutil.copy2(item, target_item)
                 except PermissionError:
-                    pass
+                    try:
+                        old_name = target_item.with_name(f"{target_item.stem}.old{target_item.suffix}")
+                        if old_name.exists():
+                            old_name.unlink(missing_ok=True)
+                        target_item.rename(old_name)
+                        shutil.copy2(item, target_item)
+                    except Exception:
+                        pass
 
     main_exe = dst / 'LanDesk.exe'
     uninst_exe = dst / 'Uninstall-LanDesk.exe'
@@ -146,7 +160,14 @@ def install_landesk(source_dir=None, install_dir=None, desktop_shortcut=True, st
         try:
             shutil.copy2(src_uninst, uninst_exe)
         except PermissionError:
-            pass
+            try:
+                old_u = uninst_exe.with_name(f"{uninst_exe.stem}.old{uninst_exe.suffix}")
+                if old_u.exists():
+                    old_u.unlink(missing_ok=True)
+                uninst_exe.rename(old_u)
+                shutil.copy2(src_uninst, uninst_exe)
+            except Exception:
+                pass
     elif main_exe.exists() and not uninst_exe.exists():
         try:
             shutil.copy2(main_exe, uninst_exe)

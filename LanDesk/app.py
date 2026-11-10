@@ -394,7 +394,8 @@ class App:
                 except Exception:
                     pass
             err_msg = str(error)
-            if '10048' in err_msg or 'address already in use' in err_msg.lower():
+            err_code = getattr(error, 'winerror', None) or getattr(error, 'errno', None)
+            if err_code == 10048 or '10048' in err_msg or 'address already in use' in err_msg.lower():
                 self.host_status.set('⚠️ พอร์ต 45888 ถูกใช้งานอยู่ (มี LanDesk หรือโปรแกรมอื่นเปิดอยู่แล้ว)')
             else:
                 self.host_status.set('⚠️ ไม่สามารถเปิดรับการเชื่อมต่อได้')

@@ -102,7 +102,7 @@ class SingleInstanceGuard:
         if last_err == 183:  # ERROR_ALREADY_EXISTS
             if self.event:
                 self.kernel.SetEvent(self.event)
-            ack_res = self.kernel.WaitForSingleObject(self.ack_event, 1200) if self.ack_event else 1
+            ack_res = self.kernel.WaitForSingleObject(self.ack_event, 2500) if self.ack_event else 1
             if ack_res == 0:
                 self.already_running = True
             else:
@@ -119,6 +119,7 @@ class SingleInstanceGuard:
                     stderr=subprocess.DEVNULL,
                     check=False,
                 )
+                time.sleep(0.4)
                 self.already_running = False
                 if self.event and self.on_wakeup:
                     threading.Thread(target=self._watch, daemon=True).start()
