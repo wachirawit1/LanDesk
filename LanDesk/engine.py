@@ -234,6 +234,22 @@ class WindowsDesktop:
         self.apply([{'type': 'key', 'code': 17, 'down': True}, {'type': 'key', 'code': code, 'down': True},
                     {'type': 'key', 'code': code, 'down': False}, {'type': 'key', 'code': 17, 'down': False}])
 
+    def switch_language(self):
+        if not getattr(self, 'user', None):
+            return
+        # 1. Windows standard language switch (Win + Space)
+        self.user.keybd_event(0x5B, 0x5B, 1, 0)
+        self.user.keybd_event(0x20, 0x39, 0, 0)
+        self.user.keybd_event(0x20, 0x39, 2, 0)
+        self.user.keybd_event(0x5B, 0x5B, 3, 0)
+        # 2. Grave Accent switch (~ / VK_OEM_3 with hardware scan code 0x29)
+        self.user.keybd_event(0xC0, 0x29, 0, 0)
+        self.user.keybd_event(0xC0, 0x29, 2, 0)
+        # 3. Post WM_INPUTLANGCHANGEREQUEST
+        hwnd = self.user.GetForegroundWindow()
+        if hwnd:
+            self.user.PostMessageW(hwnd, 0x0050, 2, 0)
+
     def apply(self, events):
         if not isinstance(events, list) or len(events) > 256:
             raise ValueError('รายการคำสั่งไม่ถูกต้อง')
@@ -263,7 +279,8 @@ class WindowsDesktop:
                 if type(code) is not int or not 8 <= code <= 254 or type(down) is not bool:
                     raise ValueError('รหัสคีย์ไม่ถูกต้อง')
                 extended = code in {33, 34, 35, 36, 37, 38, 39, 40, 45, 46, 91, 92, 111, 163, 165}
-                self.user.keybd_event(code, 0, (1 if extended else 0) | (0 if down else 2), 0)
+                scan = self.user.MapVirtualKeyW(code, 0) if getattr(self, 'user', None) else 0
+                self.user.keybd_event(code, scan, (1 if extended else 0) | (0 if down else 2), 0)
                 (self.keys.add if down else self.keys.discard)(code)
             elif kind == 'wheel':
                 delta = event.get('delta')
@@ -430,25 +447,46 @@ class Host:
                 send_json(connection, {'ok': True, 'version': 3, 'alias': alias,
                                        'password_available': bool(config.get('password'))})
                 connection.settimeout(60)
-                auth = receive_json(connection, 4096)
-                method = auth.get('method')
-                if method == 'password':
-                    if not verify_password(auth.get('password'), config.get('password')):
-                        self.limiter.fail(peer)
-                        self.audit('authentication_failed', peer)
-                        send_json(connection, {'ok': False, 'error': 'รหัสผ่านไม่ถูกต้อง หรือปลายทางไม่ได้เปิดใช้การเข้าด้วยรหัสผ่าน'})
-                        continue
-                    allowed = True
-                    permissions = {k: bool(config.get(k)) for k in self.permissions}
-                    send_json(connection, {'ok': True, 'waiting': False})
-                elif method == 'attended':
-                    send_json(connection, {'ok': True, 'waiting': True})
-                    allowed, permissions = self.consent(peer, self.stop_event)
-                else:
-                    raise ValueError('วิธียืนยันตัวตนไม่รองรับ')
+                allowed = False
+                permissions = {}
+                method = 'attended'
+                for attempt in range(3):
+                    auth = receive_json(connection, 4096)
+                    method = auth.get('method')
+                    if method == 'password':
+                        if verify_password(auth.get('password'), config.get('password')):
+                            allowed = True
+                            permissions = {k: bool(config.get(k)) for k in self.permissions}
+                            send_json(connection, {'ok': True, 'waiting': False})
+                            break
+                        else:
+                            self.limiter.fail(peer)
+                            self.audit('authentication_failed', peer)
+                            remaining = 2 - attempt
+                            if remaining > 0:
+                                send_json(connection, {
+                                    'ok': False,
+                                    'retry': True,
+                                    'remaining': remaining,
+                                    'error': f'รหัสผ่านไม่ถูกต้อง (เหลือโอกาสอีก {remaining} ครั้ง)'
+                                })
+                            else:
+                                send_json(connection, {
+                                    'ok': False,
+                                    'retry': False,
+                                    'error': 'รหัสผ่านไม่ถูกต้องครบ 3 ครั้ง ระบบตัดการเชื่อมต่อเพื่อความปลอดภัย'
+                                })
+                                break
+                    elif method == 'attended':
+                        send_json(connection, {'ok': True, 'waiting': True})
+                        allowed, permissions = self.consent(peer, self.stop_event)
+                        break
+                    else:
+                        raise ValueError('วิธียืนยันตัวตนไม่รองรับ')
                 if not allowed or self.stop_event.is_set():
                     self.audit('consent_denied', peer)
-                    send_json(connection, {'ok': False, 'error': 'ปลายทางไม่อนุญาต หรือหมดเวลารอ'})
+                    if method == 'attended':
+                        send_json(connection, {'ok': False, 'error': 'ปลายทางไม่อนุญาต หรือหมดเวลารอ'})
                     continue
                 self.desktop = self.desktop_factory()
                 monitors_count = len(getattr(self.desktop, 'monitors', [(0, 0, 1920, 1080)]))
@@ -524,6 +562,10 @@ class Host:
                             previous = None
                     draw_cursor = bool(request.get('draw_cursor', draw_cursor))
                     # Every privileged operation is checked at the receiving endpoint.
+                    if request.get('switch_lang'):
+                        with self.input_lock:
+                            if self.control and hasattr(self.desktop, 'switch_language'):
+                                self.desktop.switch_language()
                     if request.get('cancel_transfer'):
                         transfer.abort(notify_peer=False)
                         self.notify('ยกเลิกการโอนไฟล์แล้ว')
@@ -579,7 +621,7 @@ class Host:
                                 self.audit('files_sent', peer, str(len(content['files'])))
                         else:
                             raise ValueError('คำสั่ง Clipboard ไม่รองรับ')
-                    target_delay = 0.033 if quality == 'smooth' else (0.045 if quality == 'sharp' else 0.08)
+                    target_delay = 0.020 if quality == 'smooth' else (0.040 if quality == 'sharp' else 0.08)
                     self.stop_event.wait(max(0, target_delay - (time.monotonic() - started)))
             except Exception as error:
                 if not self.stop_event.is_set():

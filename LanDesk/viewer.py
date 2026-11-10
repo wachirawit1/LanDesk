@@ -72,6 +72,7 @@ class Viewer:
         ttk.Checkbutton(toolbar, text='เงาเมาส์ปลายทาง', variable=self.draw_cursor).pack(side='left', padx=(0, 8))
         ttk.Button(toolbar, text='ส่งไฟล์…', command=self.choose_files).pack(side='left')
         ttk.Button(toolbar, text='ส่งโฟลเดอร์…', command=self.choose_folder).pack(side='left', padx=4)
+        ttk.Button(toolbar, text='🌐 สลับภาษา (ไทย/EN)', command=self.switch_remote_language).pack(side='left', padx=4)
         ttk.Button(toolbar, text='โฟลเดอร์ไฟล์ที่รับ', command=self.open_received).pack(side='left', padx=4)
         ttk.Button(toolbar, text='ยกเลิกโอนไฟล์', command=lambda: self.action('cancel_transfer', None)).pack(side='left', padx=4)
         bottom = ttk.Frame(self.window, padding=(10, 4, 10, 6))
@@ -95,7 +96,7 @@ class Viewer:
         chat_entry.pack(side='left', fill='x', expand=True)
         chat_entry.bind('<Return>', lambda e: self.send_chat())
         ttk.Button(chat_row, text='ส่ง', command=self.send_chat).pack(side='right', padx=(6, 0))
-        self.canvas = tk.Canvas(surface, bg='#111c27', highlightthickness=0, takefocus=True)
+        self.canvas = tk.Canvas(surface, bg='#111c27', highlightthickness=0, takefocus=True, cursor='arrow')
         horizontal = ttk.Scrollbar(surface, orient='horizontal', command=self.canvas.xview)
         vertical = ttk.Scrollbar(surface, orient='vertical', command=self.canvas.yview)
         self.canvas.configure(xscrollcommand=horizontal.set, yscrollcommand=vertical.set)
@@ -233,7 +234,13 @@ class Viewer:
         if pos:
             self.enqueue({'type': 'button', 'button': button, 'down': down, **pos})
 
+    def switch_remote_language(self):
+        if not self.closed.is_set():
+            self.action('switch_lang', None)
+
     def key(self, event, down):
+        if down and event.keycode == 192:
+            self.switch_remote_language()
         if down and event.state & 4 and event.keycode in (67, 86) and (self.permissions['clipboard'] or self.permissions['files']):
             (self.copy_remote if event.keycode == 67 else self.paste_local)()
         elif 8 <= event.keycode <= 254:
@@ -355,16 +362,24 @@ class Viewer:
                 raise ValueError(methods.get('error', 'เชื่อมต่อไม่ได้'))
             if methods.get('alias'):
                 self.remote_alias = str(methods['alias'])[:48]
-            auth = (self.app.ask('auth', {'address': address, **methods}, self.closed)
-                    if methods.get('password_available') else {'method': 'attended'})
-            if auth is None or self.closed.is_set():
-                self.app.post(self.close)
-                return
-            send_json(self.sock, auth)
-            auth.clear()
-            result = receive_json(self.sock)
-            if not result.get('ok'):
-                raise ValueError(result.get('error', 'ยืนยันตัวตนไม่ผ่าน'))
+            methods_data = {'address': address, **methods}
+            while not self.closed.is_set():
+                auth = (self.app.ask('auth', methods_data, self.closed)
+                        if methods.get('password_available') else {'method': 'attended'})
+                if auth is None or self.closed.is_set():
+                    self.app.post(self.close)
+                    return
+                send_json(self.sock, auth)
+                auth.clear()
+                result = receive_json(self.sock)
+                if result.get('ok'):
+                    break
+                if result.get('retry'):
+                    methods_data['error_message'] = result.get('error', 'รหัสผ่านไม่ถูกต้อง กรุณาลองใหม่')
+                    methods_data['remaining'] = result.get('remaining', 0)
+                    continue
+                else:
+                    raise ValueError(result.get('error', 'ยืนยันตัวตนไม่ผ่าน'))
             if result.get('waiting'):
                 self.app.post(self.set_status, 'รอปลายทางกดยอมรับ…')
             result = receive_json(self.sock)
@@ -448,6 +463,8 @@ class Viewer:
                             request['clipboard'] = {'op': 'paste_files'}
                     elif kind == 'chat':
                         request['chat'] = value
+                    elif kind == 'switch_lang':
+                        request['switch_lang'] = True
                     elif kind in ('cancel', 'cancel_transfer'):
                         transfer.abort(notify_peer=True)
                         request['cancel_transfer'] = True

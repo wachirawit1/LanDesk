@@ -294,6 +294,9 @@ class App:
             ttk.Button(frame, text='ส่งคำขอให้ปลายทางกดรับ', command=lambda: finish({'method': 'attended'})).pack(fill='x', pady=8)
             if data['password_available']:
                 ttk.Label(frame, text='หรือกรอกรหัสผ่านของเครื่องปลายทาง').pack(anchor='w', pady=8)
+                if data.get('error_message'):
+                    ttk.Label(frame, text='⚠️ ' + data['error_message'], foreground='#c62828',
+                              font=('Leelawadee UI', 10, 'bold'), wraplength=480).pack(anchor='w', pady=(0, 6))
                 password = tk.StringVar()
                 entry = ttk.Entry(frame, textvariable=password, show='•', width=45)
                 entry.pack(fill='x')
@@ -303,6 +306,7 @@ class App:
                     finish({'method': 'password', 'password': value})
                 ttk.Button(frame, text='เข้าด้วยรหัสผ่าน', command=by_password).pack(fill='x', pady=8)
                 entry.bind('<Return>', lambda e: by_password())
+                window.after(100, entry.focus_set)
             else:
                 ttk.Label(frame, text='เครื่องนี้ไม่ได้เปิดใช้การเข้าด้วยรหัสผ่าน').pack(anchor='w', pady=8)
         else:
