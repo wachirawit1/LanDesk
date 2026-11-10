@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 from ctypes import wintypes
 
-VERSION = '0.3.1'
+VERSION = '0.3.2'
 DEFAULT_PORT = 45888
 STARTUP_KEY = r'Software\Microsoft\Windows\CurrentVersion\Run'
 STARTUP_VALUE = 'LanDesk'
